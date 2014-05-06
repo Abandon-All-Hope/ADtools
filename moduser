@@ -1,0 +1,145 @@
+#!/bin/bash
+MHOME=$HOME
+# echo ${MHOME}
+if [ ! -d $HOME/ldif ] ; then mkdir ${MHOME}/ldif ; fi
+if [ ! -d $HOME/passwd ] ; then mkdir ${MHOME}/passwd ; fi
+klist -s || kinit
+IFS='
+'
+if test -z "$1" ; then echo "$0 username"; exit ; fi
+OU=Users,OU=HPC
+
+URI='OU=PMACS,DC=pmacs,DC=upenn,DC=edu'
+maildomain=upenn.edu
+
+
+GROUPADD1='CN=SciCompAccess,OU=Groups,OU=SciComp,OU=PMACS,DC=pmacs,DC=upenn,DC=edu'
+GROUPADD2='CN=sftp,OU=Groups,OU=SciComp,OU=PMACS,DC=pmacs,DC=upenn,DC=edu'
+
+if test -n "$1" ; then NEWUSER="$1" ; fi
+
+
+INPUT=$1
+
+MODIFY="${INPUT}_mod.ldif"
+CLUST1="${INPUT}_clust1.ldif"
+CLUST2="${INPUT}_clust2.ldif"
+UGroup="${INPUT}_ugroup.ldif"
+LDIR=ldif
+TDIR=tmp
+PDIR=passwd
+ADHOST=smithers.pmacs.upenn.edu
+sudo sss_cache -G -d PMACS
+sudo sss_cache -U -d PMACS
+
+SHELL=/bin/bash
+NHOME=/home/$NEWUSER
+# echo $INPUT $GECOS $NEWID $SHELL $NHOME
+# echo "$NEWUSER:"'*'":$NEWID:$NEWID:$GECOS:$NHOME:$SHELL"
+# echo "$NEWUSER:"'*'":$NEWID:$NEWID:$GECOS:$NHOME:$SHELL" > "${MHOME}/${PDIR}/${INPUT}"
+INPUT="${MHOME}/${PDIR}/${INPUT}"
+echo $INPUT
+
+MODIFY="${MHOME}/${LDIR}/$MODIFY"
+CLUST1="${MHOME}/${LDIR}/$CLUST1"
+CLUST2="${MHOME}/${LDIR}/$CLUST2"
+UGroup="${MHOME}/${LDIR}/$UGroup"
+UNIX=Y
+rm -rf $MODIFY  $CLUST $UGroup
+# echo $MODIFY $CLUST $UGroup
+# exit
+
+# read the input file and make the fields
+for i in `cat $INPUT` ; do 
+uname=`echo $i|awk -F: '{print $1}'`; 
+uid=`echo $i|awk -F: '{print $3}'`;
+gid=`echo $i|awk -F: '{print $4}'`;
+gcos=`echo $i|awk -F: '{print $5}'`;
+C=`echo $gcos|wc -c`;
+first=`echo $gcos|awk '{print $1}'`;
+C=`echo $gcos|wc -w`;
+if [ "$C" == 2 ] ; then last=`echo $gcos|awk '{print $2}'`; fi
+if [ "$C" == 3 ] ; then last=`echo $gcos|awk '{print $3}'`; fi
+if [ "$C" == 4 ] ; then last=`echo $gcos|awk '{print $4}'`; fi
+
+CN=`ldapsearch -LLL -h smithers.pmacs.upenn.edu -b DC=pmacs,DC=upenn,DC=edu sAMAccountName=$uname dn 2>&1|grep dn:|awk -F: '{print $2}'`
+if test -z "$CN" ; then echo no $uname cant continue; exit ; fi
+
+
+# echo CREATE SECTION $uname
+
+echo MOD SECTION $uname
+# /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: givenName\ngivenName: $last\n" >> $MODIFY
+/bin/echo -e " dn: $CN\nchangetype: modify\nreplace: sAMAccountName\nsAMAccountName: $uname\n" >> $MODIFY
+/bin/echo -e " dn: $CN\nchangetype: modify\nreplace: userPrincipalName\nuserPrincipalName: ${uname}@pmacs.upenn.edu\n" >> $MODIFY
+if [ "$UNIX" == "Y" ] ; then /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: uid\nuid: $uname\n" >> $MODIFY ; fi
+/bin/echo -e " dn: $CN\nchangetype: modify\nreplace: mail\nmail: $uname@$maildomain\n" >> $MODIFY
+if [ "$UNIX" == "Y" ] ; then  /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: uidNumber\nuidNumber: $uid\n" >> $MODIFY  ; fi
+if [ "$UNIX" == "Y" ] ; then  /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: gidNumber\ngidNumber: $uid\n" >> $MODIFY  ; fi
+if [ "$UNIX" == "Y" ] ; then  /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: unixHomeDirectory\nunixHomeDirectory: /home/$uname\n" >> $MODIFY  ; fi
+if [ "$UNIX" == "Y" ] ; then  /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: loginShell\nloginShell: /bin/bash\n" >> $MODIFY  ; fi
+# /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: userAccountControl\nuserAccountControl: 544\n" >> $MODIFY
+
+#make unique usergroup
+echo Make usergroup SECTION $uname
+echo dn: "CN=$uname,OU=Unix User Groups,$URI"  >> $UGroup
+echo objectClass: top  >> $UGroup
+echo objectClass: group >> $UGroup
+echo cn: $uname  >> $UGroup
+echo distinguishedName: CN=$uname,OU=$URI  >> $UGroup
+echo name: $uname  >> $UGroup
+echo sAMAccountName: ug-$uname  >> $UGroup
+echo objectCategory: $GROUPCAT >> $UGroup
+echo gidNumber: $uid >> $UGroup
+echo member: $CN  >> $UGroup
+echo "" >> $UGroup
+done
+
+echo put in $GROUPADD1 SECTION $uname
+ 
+echo dn: $GROUPADD1 >> $CLUST1
+echo changetype: modify>> $CLUST1
+echo add: member>> $CLUST1
+echo member: $dn>> $CLUST1
+echo "" >> $CLUST1
+
+echo put in $GROUPADD2 SECTION $uname
+
+echo dn: $GROUPADD2 >> $CLUST2
+echo changetype: modify>> $CLUST2
+echo add: member>> $CLUST2
+echo member: $dn>> $CLUST2
+echo "" >> $CLUST2
+
+
+# echo modify users
+echo ldapmodify -c -h $ADHOST -f $MODIFY
+echo ldapmodify -c -h $ADHOST   -f $MODIFY >> ${MHOME}/runmoduser.sh
+
+# echo create users unix group
+echo ldapadd -c -h $ADHOST -f $UGroup
+echo ldapadd -c -h $ADHOST -f $UGroup >> ${MHOME}/runmoduser.sh
+
+# echo add user to group
+echo ldapmodify -c -h $ADHOST -f $CLUST1
+echo ldapmodify -c -h $ADHOST -f $CLUST1 >> ${MHOME}/runmoduser.sh
+
+# echo add user to group
+echo ldapmodify -c -h $ADHOST -f $CLUST2
+echo ldapmodify -c -h $ADHOST -f $CLUST2 >> ${MHOME}/runmoduser.sh
+
+
+echo sudo sss_cache -U -d PMACS >> ${MHOME}/runmoduser.sh
+echo sudo sss_cache -G -d PMACS >> ${MHOME}/runmoduser.sh
+echo getent passwd $uname >> ${MHOME}/runmoduser.sh
+
+chmod 755 ${MHOME}/runmoduser.sh
+
+echo "do you want to create? Y/N"
+read ans
+if test -n "`echo $ans|grep -i y`"; then
+echo you said yes 
+cat ${MHOME}/runmoduser.sh
+# ${MHOME}/runmoduser.sh
+fi
+
