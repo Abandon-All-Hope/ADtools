@@ -52,7 +52,13 @@ rm -rf $MODIFY  $CLUST $UGroup
 # read the input file and make the fields
 for i in `cat $INPUT` ; do 
 uname=`echo $i|awk -F: '{print $1}'`; 
+unameexists=`getent passwd $uname`
+E=0
+if test -n "$unameexists" ; then echo $uname already present ; E=1; fi
 uid=`echo $i|awk -F: '{print $3}'`;
+uidexists=`getent passwd $uid`
+if test -n "$uidexists" ; then echo $uid already present ; E=1; fi
+if [ $E == 1 ] ; then exit ; fi
 gid=`echo $i|awk -F: '{print $4}'`;
 gcos=`echo $i|awk -F: '{print $5}'`;
 C=`echo $gcos|wc -c`;
@@ -70,7 +76,7 @@ if test -z "$CN" ; then echo no $uname cant continue; exit ; fi
 
 echo MOD SECTION $uname
 # /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: givenName\ngivenName: $last\n" >> $MODIFY
-/bin/echo -e " dn: $CN\nchangetype: modify\nreplace: sAMAccountName\nsAMAccountName: $uname\n" >> $MODIFY
+/bin/echo -e " dn: $CN\nchangetype: modify\nreplace: sAMAccountName\nsAMAccountName: $uname\n" > $MODIFY
 /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: userPrincipalName\nuserPrincipalName: ${uname}@pmacs.upenn.edu\n" >> $MODIFY
 if [ "$UNIX" == "Y" ] ; then /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: uid\nuid: $uname\n" >> $MODIFY ; fi
 /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: mail\nmail: $uname@$maildomain\n" >> $MODIFY
@@ -82,7 +88,7 @@ if [ "$UNIX" == "Y" ] ; then  /bin/echo -e " dn: $CN\nchangetype: modify\nreplac
 
 #make unique usergroup
 echo Make usergroup SECTION $uname
-echo dn: "CN=$uname,OU=Unix User Groups,$URI"  >> $UGroup
+echo dn: "$CN"  > $UGroup
 echo objectClass: top  >> $UGroup
 echo objectClass: group >> $UGroup
 echo cn: $uname  >> $UGroup
@@ -97,24 +103,24 @@ done
 
 echo put in $GROUPADD1 SECTION $uname
  
-echo dn: $GROUPADD1 >> $CLUST1
+echo dn: $GROUPADD1 > $CLUST1
 echo changetype: modify>> $CLUST1
 echo add: member>> $CLUST1
-echo member: $dn>> $CLUST1
+echo member: $CN >> $CLUST1
 echo "" >> $CLUST1
 
 echo put in $GROUPADD2 SECTION $uname
 
-echo dn: $GROUPADD2 >> $CLUST2
+echo dn: $GROUPADD2 > $CLUST2
 echo changetype: modify>> $CLUST2
 echo add: member>> $CLUST2
-echo member: $dn>> $CLUST2
+echo member: $CN >> $CLUST2
 echo "" >> $CLUST2
 
 
 # echo modify users
 echo ldapmodify -c -h $ADHOST -f $MODIFY
-echo ldapmodify -c -h $ADHOST   -f $MODIFY >> ${MHOME}/runmoduser.sh
+echo ldapmodify -c -h $ADHOST   -f $MODIFY > ${MHOME}/runmoduser.sh
 
 # echo create users unix group
 echo ldapadd -c -h $ADHOST -f $UGroup
