@@ -52,12 +52,18 @@ rm -rf $MODIFY  $CLUST $UGroup
 # read the input file and make the fields
 for i in `cat $INPUT` ; do 
 uname=`echo $i|awk -F: '{print $1}'`; 
-unameexists=`getent passwd $uname`
+# test for existance uid, uname and primary group, report each and quit if 
+# any exist
 E=0
+unameexists=`getent passwd $uname`
 if test -n "$unameexists" ; then echo $uname already present ; E=1; fi
 uid=`echo $i|awk -F: '{print $3}'`;
 uidexists=`getent passwd $uid`
 if test -n "$uidexists" ; then echo $uid already present ; E=1; fi
+ugexists=`getent group $uname`
+if test -n "$ugexists" ; then echo ug named $unmae already present ; E=1; fi
+uguexists=`getent group $uid`
+if test -n "$uguexists" ; then echo ug with id $uid already present ; E=1; fi
 if [ $E == 1 ] ; then exit ; fi
 gid=`echo $i|awk -F: '{print $4}'`;
 gcos=`echo $i|awk -F: '{print $5}'`;
