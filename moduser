@@ -21,7 +21,6 @@ echo pdomain $pdomain
 echo ADHOST $ADHOST
 echo DOMAIN $DOMAIN
 echo BASE $BASE
-exit
 
 if test -n "$1" ; then NEWUSER="$1" ; fi
 
