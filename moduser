@@ -7,14 +7,21 @@ klist -s || kinit
 IFS='
 '
 if test -z "$1" ; then echo "$0 username"; exit ; fi
-OU=Users,OU=HPC
+if [ ! -r $0.cfg ] ; then echo no $0.cfg: get a shave, you are invalid ; exit ; fi
 
-URI='OU=PMACS,DC=pmacs,DC=upenn,DC=edu'
-maildomain=upenn.edu
-
-
-GROUPADD1='CN=SciCompAccess,OU=Groups,OU=SciComp,OU=PMACS,DC=pmacs,DC=upenn,DC=edu'
-GROUPADD2='CN=sftp,OU=Groups,OU=SciComp,OU=PMACS,DC=pmacs,DC=upenn,DC=edu'
+for var in BASE ADHOST DOMAIN pdomain maildomain URI GROUPADD1 GROUPADD2 ; do
+eval `egrep ^${var}= moduser.cfg`
+done
+#to use this script you need $0.cfg with these vars defined:
+echo URI $URI
+echo GROUPADD1 $GROUPADD1
+echo GROUPADD2 $GROUPADD2
+echo maildomain $maildomain
+echo pdomain $pdomain
+echo ADHOST $ADHOST
+echo DOMAIN $DOMAIN
+echo BASE $BASE
+exit
 
 if test -n "$1" ; then NEWUSER="$1" ; fi
 
@@ -28,9 +35,8 @@ UGroup="${INPUT}_ugroup.ldif"
 LDIR=ldif
 TDIR=tmp
 PDIR=passwd
-ADHOST=smithers.pmacs.upenn.edu
-sudo sss_cache -G -d PMACS
-sudo sss_cache -U -d PMACS
+sudo sss_cache -G -d $DOMAIN
+sudo sss_cache -U -d $DOMAIN
 
 SHELL=/bin/bash
 NHOME=/home/$NEWUSER
@@ -64,7 +70,7 @@ ugexists=`getent group $uname`
 if test -n "$ugexists" ; then echo ug named $unmae already present ; E=1; fi
 uguexists=`getent group $uid`
 if test -n "$uguexists" ; then echo ug with id $uid already present ; E=1; fi
-if [ $E == 1 ] ; then exit ; fi
+# if [ $E == 1 ] ; then exit ; fi
 gid=`echo $i|awk -F: '{print $4}'`;
 gcos=`echo $i|awk -F: '{print $5}'`;
 C=`echo $gcos|wc -c`;
@@ -74,7 +80,7 @@ if [ "$C" == 2 ] ; then last=`echo $gcos|awk '{print $2}'`; fi
 if [ "$C" == 3 ] ; then last=`echo $gcos|awk '{print $3}'`; fi
 if [ "$C" == 4 ] ; then last=`echo $gcos|awk '{print $4}'`; fi
 
-CN=`ldapsearch -LLL -h smithers.pmacs.upenn.edu -b DC=pmacs,DC=upenn,DC=edu sAMAccountName=$uname dn 2>&1|grep dn:|awk -F: '{print $2}'`
+CN=`ldapsearch -LLL -h $ADHOST -b $BASE sAMAccountName=$uname dn 2>&1|grep dn:|awk -F: '{print $2}'`
 if test -z "$CN" ; then echo no $uname cant continue; exit ; fi
 
 
@@ -83,7 +89,7 @@ if test -z "$CN" ; then echo no $uname cant continue; exit ; fi
 echo MOD SECTION $uname
 # /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: givenName\ngivenName: $last\n" >> $MODIFY
 /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: sAMAccountName\nsAMAccountName: $uname\n" > $MODIFY
-/bin/echo -e " dn: $CN\nchangetype: modify\nreplace: userPrincipalName\nuserPrincipalName: ${uname}@pmacs.upenn.edu\n" >> $MODIFY
+/bin/echo -e " dn: $CN\nchangetype: modify\nreplace: userPrincipalName\nuserPrincipalName: ${uname}@${pdomain}\n" >> $MODIFY
 if [ "$UNIX" == "Y" ] ; then /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: uid\nuid: $uname\n" >> $MODIFY ; fi
 /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: mail\nmail: $uname@$maildomain\n" >> $MODIFY
 if [ "$UNIX" == "Y" ] ; then  /bin/echo -e " dn: $CN\nchangetype: modify\nreplace: uidNumber\nuidNumber: $uid\n" >> $MODIFY  ; fi
@@ -141,8 +147,8 @@ echo ldapmodify -c -h $ADHOST -f $CLUST2
 echo ldapmodify -c -h $ADHOST -f $CLUST2 >> ${MHOME}/runmoduser.sh
 
 
-echo sudo sss_cache -U -d PMACS >> ${MHOME}/runmoduser.sh
-echo sudo sss_cache -G -d PMACS >> ${MHOME}/runmoduser.sh
+echo sudo sss_cache -U -d $DOMAIN >> ${MHOME}/runmoduser.sh
+echo sudo sss_cache -G -d $DOMAIN >> ${MHOME}/runmoduser.sh
 echo getent passwd $uname >> ${MHOME}/runmoduser.sh
 
 chmod 755 ${MHOME}/runmoduser.sh
